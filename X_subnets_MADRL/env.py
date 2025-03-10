@@ -139,7 +139,7 @@ class env:
         c = 3*1e8
         tau = .01
         fd_max = v_ms*f_c*1e9/c
-        TimeVaris = np.arange(0,5,0.0005)
+        TimeVaris = np.arange(0,5,5/Ts)
         ff_gains, TimeSequences = self.return_jakes_coeffcients(fd_max, TimeVaris, n_links = M*(M-1)*J*N, plot = False)
         
         FastFadingChannels = np.random.normal(0,1/np.sqrt(2), M*J*N) + 1j*np.random.normal(0,1/np.sqrt(2), M*J*N)
@@ -155,7 +155,7 @@ class env:
             all_fast_fading_gains = np.array(all_fast_fading_gains)
             alltime_fast_fading_gains.append(all_fast_fading_gains)
         alltime_fast_fading_gains = np.array(alltime_fast_fading_gains)
-        return alltime_fast_fading_gains
+        return alltime_fast_fading_gains, ff_gains
     
     ######## functions to return large scale fading gains ##########
     #### compute intra and inter distances across all time slots #####
@@ -336,10 +336,10 @@ class env:
         SINR = np.multiply(SINR, b_actions)
         SINR_combined = np.max(SINR, axis = 0)
         SINR_combined_lin.extend(SINR_combined)
-        k,n,P_o = 0.4,1, 1e-5
+        k,n,P_o = 400,1000, 1e-5
         V_gamma = 1 - (1/(1 + SINR_combined)**2)
         C_gamma = np.log2(1 + SINR_combined)
-        Q_term = (2*n*C_gamma - 2*k + np.log2(n))/(2*np.sqrt(n)*np.sqrt(V_gamma))
+        Q_term = (2*n*C_gamma - 2*k + np.log2(n))/(2*n*np.sqrt(V_gamma))
         P_e = 0.5-0.5*special.erf(Q_term/np.sqrt(2))
         #reward = -np.exp((P_e/P_o) - 1)
         reward = -np.log10(np.abs(((P_e/P_o)+epsilon)))
@@ -374,7 +374,7 @@ class env:
         #dimension of each SINR should be a matrix of N x J for an agent
         SINR =   np.transpose(WantedSigPerDev/(InterfPowsPerDev + 1/self.gamma_0))
         SINR = np.multiply(SINR, b_actions)
-        SINR = np.multiply(SINR, b_actions)
+        #SINR = np.multiply(SINR, b_actions)
         next_state = np.stack((SINR, b_actions), axis=0)
         return next_state
 
