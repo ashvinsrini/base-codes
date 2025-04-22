@@ -347,7 +347,7 @@ class env:
         
     ####### get next state ##############
     def get_next_state(self, alltime_PathGains, alltime_fast_fading_gains, 
-                        ts = 1, b = None, interfers_actions = None, b_actions = None):
+                        ts = 1, b = None, interfers_actions = None, b_actions = None, flag = None):
         ### ts should be next time-slot relative to compute rewards #########
         M, J, N = self.M, self.J, self.N        
         ###### if all are None, then just enerate random actions for intial time-slot and for testing ####
@@ -359,6 +359,7 @@ class env:
                     interfers_actions[i,:,:] = np.transpose(self._generate_matrix(N, J))
                     
         ###### the below code is the samething as in compute rewards method #########
+        #pdb.set_trace()
         PathGainsTot = alltime_PathGains[ts,:,:,:]*alltime_fast_fading_gains[ts,:,:,:]
         
         channel_gain_interested_subnw = PathGainsTot[0,:,:]
@@ -367,12 +368,18 @@ class env:
         interfers = np.array([i for i in range(M) if i!=b])
         InterfPowGains = channel_gain_interested_subnw[interfers,:,:]
 
+
         for i in range(InterfPowGains.shape[0]):
                 InterfPowGains[i,:,:] = np.multiply(InterfPowGains[i,:,:], interfers_actions[i,:,:])
         InterfPowsPerDev = np.sum(InterfPowGains, axis = 0)
-        
+        #if flag is not None:
+            #pdb.set_trace()
+        #print('ts', ts, 'WantedSigPerDev shape', WantedSigPerDev.shape, 'InterfPowGains shape', InterfPowGains.shape, 'interfers_actions shape', interfers_actions.shape)
         #dimension of each SINR should be a matrix of N x J for an agent
         SINR =   np.transpose(WantedSigPerDev/(InterfPowsPerDev + 1/self.gamma_0))
+        #print('SINR', SINR, 'b_actions', b_actions)
+        #print('----------------------------')
+        #print('SINR shape', SINR.shape, 'b_actions shape', b_actions.shape)
         SINR = np.multiply(SINR, b_actions)
         #SINR = np.multiply(SINR, b_actions)
         next_state = np.stack((SINR, b_actions), axis=0)
