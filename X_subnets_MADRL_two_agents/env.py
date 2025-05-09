@@ -29,7 +29,7 @@ from natsort import natsorted
 from PIL import Image
 from scipy.special import jv
 from scipy import special
-
+from scipy.special import erfc, i0
 
 
 
@@ -298,7 +298,62 @@ class env:
             SINRsdB = 10*np.log10(SINRs)
             all_SINRsdB[ts,:] = SINRsdB            
         return all_SINRsdB
-        
+
+    def bler_rician(self, snr_lin_array, n=1000, k=400, r_max=8, n_r=2000):
+        """
+        Compute BLER over Rician fading for a batch of instantaneous SINRs.
+
+        Parameters
+        ----------
+        snr_db_array : array-like of shape (M,)
+            Instantaneous SINRs in dB (vector input).
+        n      : int
+            Block length.
+        k      : int
+            Number of message bits.
+        K      : float
+            Rician K-factor.
+        r_max  : float
+            Upper limit for amplitude integration.
+        n_r    : int
+            Number of integration points over r.
+
+        Returns
+        -------
+        bler_vals : ndarray of shape (M,)
+            Estimated block-error rates for each entry in snr_db_array.
+        """
+        # Ensure input is an array
+        snr_lin = np.asarray(snr_lin_array, dtype=float)
+        K=16
+        # 1) Convert to linear-average SNR
+        #gamma_bar = 10**(snr_db / 10)             # shape (M,)
+        gamma_bar = snr_lin
+        # 2) Build Rician amplitude PDF once
+        r = np.linspace(0, r_max, n_r)            # shape (n_r,)
+        pdf_r = 2 * r * (K + 1) \
+                * np.exp(-K - (K + 1) * r**2) \
+                * i0(2 * r * np.sqrt(K * (K + 1)))
+        pdf_r /= np.trapz(pdf_r, r)               # normalized, shape (n_r,)
+
+        # 3) Compute instantaneous SNR matrix: outer product of gamma_bar and r^2
+        #    shape -> (M, n_r)
+        gamma_inst = np.outer(gamma_bar, r**2)
+
+        # 4) AWGN finite-block BLER for each gamma_inst
+        #    vectorize the Q-function approach
+        C = np.log2(1 + gamma_inst)                               # (M, n_r)
+        V = (gamma_inst * (gamma_inst + 2) / (1 + gamma_inst)**2)  # (M, n_r)
+        V *= (np.log2(np.e))**2
+        z = (n * C - k + 0.5 * np.log2(n)) / np.sqrt(n * V)        # (M, n_r)
+        Pe_inst = 0.5 * erfc(z / np.sqrt(2))                       # (M, n_r)
+
+        # 5) Integrate over r to get BLER per SINR
+        #    For each row m, trapz over axis=1 with pdf_r
+        bler_vals = np.trapz(Pe_inst * pdf_r[np.newaxis, :], r, axis=1)  # (M,)
+
+        return bler_vals
+
         
     ###### compute rewards ###############
     def compute_rewards(self, alltime_PathGains, alltime_fast_fading_gains, 
@@ -337,12 +392,15 @@ class env:
         SINR_combined = np.max(SINR, axis = 0)
         SINR_combined_lin.extend(SINR_combined)
         k,n,P_o = 400,1000, 1e-5
+        #'''
         V_gamma = 1 - (1/(1 + SINR_combined)**2)
         C_gamma = np.log2(1 + SINR_combined)
         #Q_term = (2*n*C_gamma - 2*k + np.log2(n))/(2*n*np.sqrt(V_gamma))
         k_n, n_n = k/n, n/n #########surrogate bler used for reward purposes, exhbits similar performance for original BLER expression with quicker computation
         Q_term = (2*n_n*C_gamma - 2*k_n + np.log2(n_n))/(2*np.sqrt(n_n*V_gamma))                                  
         P_e = 0.5-0.5*special.erf(Q_term/np.sqrt(2))
+        #'''
+        #P_e = self.bler_rician(SINR_combined)
         #reward = -np.exp((P_e/P_o) - 1)
         reward = -np.log10(np.abs(((P_e/P_o)+epsilon)))
         return SINR_combined_lin, P_e, reward
