@@ -339,7 +339,9 @@ class env:
         k,n,P_o = 400,1000, 1e-5
         V_gamma = 1 - (1/(1 + SINR_combined)**2)
         C_gamma = np.log2(1 + SINR_combined)
-        Q_term = (2*n*C_gamma - 2*k + np.log2(n))/(2*n*np.sqrt(V_gamma))
+        #Q_term = (2*n*C_gamma - 2*k + np.log2(n))/(2*n*np.sqrt(V_gamma))
+        k_n, n_n = k/n, n/n #########surrogate bler used for reward purposes, exhbits similar performance for original BLER expression with quicker computation
+        Q_term = (2*n_n*C_gamma - 2*k_n + np.log2(n_n))/(2*np.sqrt(n_n*V_gamma))                                  
         P_e = 0.5-0.5*special.erf(Q_term/np.sqrt(2))
         #reward = -np.exp((P_e/P_o) - 1)
         reward = -np.log10(np.abs(((P_e/P_o)+epsilon)))
