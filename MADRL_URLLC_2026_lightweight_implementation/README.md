@@ -592,19 +592,6 @@ If you use this code in academic work, please cite the associated papers:
 
 
 
-\## License
-
-
-
-
-
-\- \*\*MIT License\*\* for a simple permissive code license
-
-
-
-\---
-
-
 
 \## Recommended extra files for the repository
 
