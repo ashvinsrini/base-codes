@@ -71,7 +71,7 @@ class env:
         return matrix
     def compute_gamma0(self):
         ## transmit power ###
-        Pt_dBm = 10  # Transmit power in dBm
+        Pt_dBm = 20  # Transmit power in dBm
 
         #### Noise power ####
         k = 1.38e-23  # Boltzmann's constant
@@ -340,7 +340,7 @@ class env:
         #    shape -> (M, n_r)
         gamma_inst = np.outer(gamma_bar, r**2)
 
-        # 4) AWGN finite-block BLER for each gamma_inst
+        # 4)  finite-block BLER for each gamma_inst
         #    vectorize the Q-function approach
         C = np.log2(1 + gamma_inst)                               # (M, n_r)
         V = (gamma_inst * (gamma_inst + 2) / (1 + gamma_inst)**2)  # (M, n_r)
@@ -356,92 +356,81 @@ class env:
 
         
     ###### compute rewards ###############
-    def compute_rewards(self, alltime_PathGains, alltime_fast_fading_gains, 
-                        ts = 0, b = None, interfers_actions = None, b_actions = None):
-        # interfers_actions shape (M-1, J,N), b_actions shape J x N
+    def compute_rewards(self, alltime_PathGains, alltime_fast_fading_gains,
+                    ts=0, b=None, interfers_actions=None, b_actions=None):
+        # interfers_actions shape: (M-1, J, N)
+        # b_actions shape: (N, J)
         M, J, N = self.M, self.J, self.N
-        epsilon = 1e-15        
-        SINR_combined_lin = []
-        
-        
+        epsilon = 1e-15
+    
         if ((b is None) and (interfers_actions is None) and (b_actions is None)):
-                b = 0
-                interfers_actions = np.zeros((M-1, J, N))
-                b_actions = self._generate_matrix(N, J)
-                for i, m in enumerate(range(M-1)):
-                    interfers_actions[i,:,:] = np.transpose(self._generate_matrix(N, J))
-
-        PathGainsTot = alltime_PathGains[ts,:,:,:]*alltime_fast_fading_gains[ts,:,:,:]
-        
-        channel_gain_interested_subnw = PathGainsTot[0,:,:]
-        channel_gain_interested_subnw = channel_gain_interested_subnw.reshape(M,J,N)
-        WantedSigPerDev = channel_gain_interested_subnw[0,:,:]
-        interfers = np.array([i for i in range(M) if i!=b])
-        InterfPowGains = channel_gain_interested_subnw[interfers,:,:]
-
+            b = 0
+            interfers_actions = np.zeros((M - 1, J, N))
+            b_actions = self._generate_matrix(N, J)
+            for i in range(M - 1):
+                interfers_actions[i, :, :] = np.transpose(self._generate_matrix(N, J))
+    
+        PathGainsTot = alltime_PathGains[ts, :, :, :] * alltime_fast_fading_gains[ts, :, :, :]
+    
+        # Select the b-th AP / subnetwork viewpoint
+        channel_gain_interested_subnw = PathGainsTot[b, :, :]
+        channel_gain_interested_subnw = channel_gain_interested_subnw.reshape(M, J, N)
+    
+        # Desired users of agent/subnetwork b
+        WantedSigPerDev = channel_gain_interested_subnw[b, :, :]
+    
+        # Interferers are all subnetworks except b
+        interfers = np.array([i for i in range(M) if i != b])
+        InterfPowGains = channel_gain_interested_subnw[interfers, :, :].copy()
+    
         for i in range(InterfPowGains.shape[0]):
-                InterfPowGains[i,:,:] = np.multiply(InterfPowGains[i,:,:], interfers_actions[i,:,:])
-        InterfPowsPerDev = np.sum(InterfPowGains, axis = 0)
-        #dimension of each SINR should be a matrix of N x J for an agent
-        #print(np.max(WantedSigPerDev), np.max(InterfPowsPerDev))
-        SINR =   np.transpose(WantedSigPerDev/(InterfPowsPerDev + 1/self.gamma_0))
-        #SINR =   np.transpose(WantedSigPerDev/(InterfPowsPerDev))
-        #inds = np.where(SINR == np.Inf)
-        #SINR[inds] = 0
+            InterfPowGains[i, :, :] = np.multiply(InterfPowGains[i, :, :], interfers_actions[i, :, :])
+    
+        InterfPowsPerDev = np.sum(InterfPowGains, axis=0)
+    
+        SINR = np.transpose(WantedSigPerDev / (InterfPowsPerDev + 1 / self.gamma_0))
         SINR = np.multiply(SINR, b_actions)
-        SINR_combined = np.max(SINR, axis = 0)
-        SINR_combined_lin.extend(SINR_combined)
-        k,n,P_o = 400,1000, 1e-5
-        '''
-        V_gamma = 1 - (1/(1 + SINR_combined)**2)
-        C_gamma = np.log2(1 + SINR_combined)
-        #Q_term = (2*n*C_gamma - 2*k + np.log2(n))/(2*n*np.sqrt(V_gamma))
-        k_n, n_n = k/n, n/n #########surrogate bler used for reward purposes, exhbits similar performance for original BLER expression with quicker computation
-        Q_term = (2*n_n*C_gamma - 2*k_n + np.log2(n_n))/(2*np.sqrt(n_n*V_gamma))                                  
-        P_e = 0.5-0.5*special.erf(Q_term/np.sqrt(2))
-        '''
+    
+        SINR_combined = np.max(SINR, axis=0)
+        SINR_combined_lin = list(SINR_combined)
+    
+        k, n, P_o = 400, 1000, 1e-5
         P_e = self.bler_rician(SINR_combined)
-        #reward = -np.exp((P_e/P_o) - 1)
-        reward = -np.log10(np.abs(((P_e/P_o)+epsilon)))
+        reward = -np.log10(np.abs((P_e / P_o) + epsilon))
+    
         return SINR_combined_lin, P_e, reward
-        
     ####### get next state ##############
-    def get_next_state(self, alltime_PathGains, alltime_fast_fading_gains, 
-                        ts = 1, b = None, interfers_actions = None, b_actions = None, flag = None):
-        ### ts should be next time-slot relative to compute rewards #########
-        M, J, N = self.M, self.J, self.N        
-        ###### if all are None, then just enerate random actions for intial time-slot and for testing ####
+    def get_next_state(self, alltime_PathGains, alltime_fast_fading_gains,
+                       ts=1, b=None, interfers_actions=None, b_actions=None, flag=None):
+        M, J, N = self.M, self.J, self.N
+    
         if ((b is None) and (interfers_actions is None) and (b_actions is None)):
-                b = 0
-                interfers_actions = np.zeros((M-1, J, N))
-                b_actions = self._generate_matrix(N, J)
-                for i, m in enumerate(range(M-1)):
-                    interfers_actions[i,:,:] = np.transpose(self._generate_matrix(N, J))
-                    
-        ###### the below code is the samething as in compute rewards method #########
-        #pdb.set_trace()
-        PathGainsTot = alltime_PathGains[ts,:,:,:]*alltime_fast_fading_gains[ts,:,:,:]
-        
-        channel_gain_interested_subnw = PathGainsTot[0,:,:]
-        channel_gain_interested_subnw = channel_gain_interested_subnw.reshape(M,J,N)
-        WantedSigPerDev = channel_gain_interested_subnw[0,:,:]
-        interfers = np.array([i for i in range(M) if i!=b])
-        InterfPowGains = channel_gain_interested_subnw[interfers,:,:]
-
-
+            b = 0
+            interfers_actions = np.zeros((M - 1, J, N))
+            b_actions = self._generate_matrix(N, J)
+            for i in range(M - 1):
+                interfers_actions[i, :, :] = np.transpose(self._generate_matrix(N, J))
+    
+        PathGainsTot = alltime_PathGains[ts, :, :, :] * alltime_fast_fading_gains[ts, :, :, :]
+    
+        # Select the b-th AP / subnetwork viewpoint
+        channel_gain_interested_subnw = PathGainsTot[b, :, :]
+        channel_gain_interested_subnw = channel_gain_interested_subnw.reshape(M, J, N)
+    
+        # Desired users of agent/subnetwork b
+        WantedSigPerDev = channel_gain_interested_subnw[b, :, :]
+    
+        # Interferers are all subnetworks except b
+        interfers = np.array([i for i in range(M) if i != b])
+        InterfPowGains = channel_gain_interested_subnw[interfers, :, :].copy()
+    
         for i in range(InterfPowGains.shape[0]):
-                InterfPowGains[i,:,:] = np.multiply(InterfPowGains[i,:,:], interfers_actions[i,:,:])
-        InterfPowsPerDev = np.sum(InterfPowGains, axis = 0)
-        #if flag is not None:
-            #pdb.set_trace()
-        #print('ts', ts, 'WantedSigPerDev shape', WantedSigPerDev.shape, 'InterfPowGains shape', InterfPowGains.shape, 'interfers_actions shape', interfers_actions.shape)
-        #dimension of each SINR should be a matrix of N x J for an agent
-        SINR =   np.transpose(WantedSigPerDev/(InterfPowsPerDev + 1/self.gamma_0))
-        #print('SINR', SINR, 'b_actions', b_actions)
-        #print('----------------------------')
-        #print('SINR shape', SINR.shape, 'b_actions shape', b_actions.shape)
+            InterfPowGains[i, :, :] = np.multiply(InterfPowGains[i, :, :], interfers_actions[i, :, :])
+    
+        InterfPowsPerDev = np.sum(InterfPowGains, axis=0)
+    
+        SINR = np.transpose(WantedSigPerDev / (InterfPowsPerDev + 1 / self.gamma_0))
         SINR = np.multiply(SINR, b_actions)
-        #SINR = np.multiply(SINR, b_actions)
+    
         next_state = np.stack((SINR, b_actions), axis=0)
         return next_state
-
