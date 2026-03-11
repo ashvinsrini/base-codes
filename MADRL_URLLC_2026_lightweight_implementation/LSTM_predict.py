@@ -4,7 +4,6 @@
 """
 Notebook-matching LSTM interference script with 95% confidence intervals.
 
-What this fixes compared to the previous 5-run script:
 1) Uses NUM_EPOCHS = 50 to match the notebook.
 2) Records training loss per mini-batch update (not per epoch average),
    so the loss curve matches the notebook-style long semilogy plot.
