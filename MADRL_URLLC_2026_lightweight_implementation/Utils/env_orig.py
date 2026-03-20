@@ -325,7 +325,7 @@ class env:
         """
         # Ensure input is an array
         snr_lin = np.asarray(snr_lin_array, dtype=float)
-        K=16
+        K=24
         # 1) Convert to linear-average SNR
         #gamma_bar = 10**(snr_db / 10)             # shape (M,)
         gamma_bar = snr_lin
